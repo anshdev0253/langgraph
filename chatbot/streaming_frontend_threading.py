@@ -1,6 +1,6 @@
 import streamlit as st
-from langgraph_backend import chatbot
-from langchain_core.messages import HumanMessage
+from langgraph_backend import chatbot, model
+from langchain_core.messages import HumanMessage, SystemMessage
 import uuid
 
 
@@ -17,7 +17,16 @@ def reset_chat():
 
 def add_thread(thread_id):
     if thread_id not in st.session_state['chat_threads']:
-        st.session_state['chat_threads'].append(thread_id)
+        st.session_state['chat_threads'][thread_id] = "New Chat"
+
+
+def generate_title(user_message, ai_message):
+    prompt = [
+        SystemMessage(content="Generate a very short title (4-6 words max) for a chat conversation based on the first exchange. Reply with only the title, no quotes or punctuation."),
+        HumanMessage(content=f"User: {user_message}\nAssistant: {ai_message}")
+    ]
+    response = model.invoke(prompt)
+    return response.content.strip()
 
 def load_conversation(thread_id):
     return chatbot.get_state(config={'configurable': {'thread_id': thread_id}}).values['messages']
@@ -31,7 +40,7 @@ if 'thread_id' not in st.session_state:
     st.session_state['thread_id'] = generate_thread_id()
 
 if 'chat_threads' not in st.session_state:
-    st.session_state['chat_threads'] = []
+    st.session_state['chat_threads'] = {}
 
 add_thread(st.session_state['thread_id'])
 
@@ -45,8 +54,8 @@ if st.sidebar.button('New Chat'):
 
 st.sidebar.header('My Conversations')
 
-for thread_id in st.session_state['chat_threads'][::-1]:
-    if st.sidebar.button(str(thread_id)):
+for thread_id, title in reversed(st.session_state['chat_threads'].items()):
+    if st.sidebar.button(title, key=str(thread_id)):
         st.session_state['thread_id'] = thread_id
         messages = load_conversation(thread_id)
 
@@ -91,3 +100,12 @@ if user_input:
                 stream_mode = 'messages'
             )
         )
+
+    st.session_state['message_history'].append({'role': 'assistant', 'content': ai_message})
+
+    # Generate title after the first message exchange
+    thread_id = st.session_state['thread_id']
+    if st.session_state['chat_threads'].get(thread_id) == "New Chat":
+        title = generate_title(user_input, ai_message)
+        st.session_state['chat_threads'][thread_id] = title
+        st.rerun()  # Re-render the page so the sidebar shows the updated title
